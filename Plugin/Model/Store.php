@@ -5,6 +5,10 @@ namespace MageSuite\SeoHreflang\Plugin\Model;
 class Store
 {
     /**
+     * Config path for flag whether use SID on frontend
+     */
+    const XML_PATH_USE_FRONTEND_SID = 'web/session/use_frontend_sid';
+    /**
      * @var \Magento\Store\Model\StoreManagerInterface
      */
     private $storeManager;
@@ -24,13 +28,18 @@ class Store
      * @var \Magento\Framework\Session\SessionManagerInterface
      */
     private $session;
+    /**
+     * @var \Magento\Framework\App\Config\ScopeConfigInterface
+     */
+    protected $scopeConfig;
 
     public function __construct(
         \Magento\Store\Model\StoreManagerInterface $storeManager,
         \Magento\Framework\Session\SidResolverInterface $sidResolver,
         \Magento\Framework\App\RequestInterface $request,
         \Magento\Framework\UrlInterface $url,
-        \Magento\Framework\Session\SessionManagerInterface $session
+        \Magento\Framework\Session\SessionManagerInterface $session,
+        \Magento\Framework\App\Config\ScopeConfigInterface $scopeConfig
     )
     {
         $this->storeManager = $storeManager;
@@ -38,11 +47,15 @@ class Store
         $this->request = $request;
         $this->url = $url;
         $this->session = $session;
+        $this->scopeConfig = $scopeConfig;
     }
 
     public function aroundGetCurrentUrl(\Magento\Store\Model\Store $subject, callable $proceed, $fromStore = true)
     {
-        $sidQueryParam = $this->sidResolver->getSessionIdQueryParam($this->_getSession($subject->getCode()));
+
+        if($this->canUseSessionId()) {
+            $sidQueryParam = $this->sidResolver->getSessionIdQueryParam($this->_getSession($subject->getCode()));
+        }
 
         $requestString = $this->url->escape(
             preg_replace(
@@ -65,11 +78,14 @@ class Store
         }
 
         $currQuery = $this->request->getQueryValue();
-        if (isset($currQuery[$sidQueryParam])
-            && !empty($currQuery[$sidQueryParam])
-            && $this->_getSession($subject->getCode())->getSessionIdForHost($storeUrl) != $currQuery[$sidQueryParam]
-        ) {
-            unset($currQuery[$sidQueryParam]);
+
+        if($this->canUseSessionId()) {
+            if (isset($currQuery[$sidQueryParam])
+                && !empty($currQuery[$sidQueryParam])
+                && $this->_getSession($subject->getCode())->getSessionIdForHost($storeUrl) != $currQuery[$sidQueryParam]
+            ) {
+                unset($currQuery[$sidQueryParam]);
+            }
         }
 
         foreach ($currQuery as $key => $value) {
@@ -108,5 +124,21 @@ class Store
             $this->session->start();
         }
         return $this->session;
+    }
+
+    /**
+     * Retrieve use session in URL flag.
+     *
+     * @return bool
+     * @SuppressWarnings(PHPMD.BooleanGetMethodName)
+     */
+    public function canUseSessionId()
+    {
+
+        if($this->scopeConfig->isSetFlag(self::XML_PATH_USE_FRONTEND_SID)) {
+            return true;
+        }
+
+        return false;
     }
 }
